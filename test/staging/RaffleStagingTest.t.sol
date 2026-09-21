@@ -32,16 +32,16 @@ contract RaffleTest is StdCheats, Test {
 
     function setUp() external {
         DeployRaffle deployer = new DeployRaffle();
-        (raffle, helperConfig) = deployer.run();
+        (raffle, helperConfig) = deployer.deployContract();
         vm.deal(PLAYER, STARTING_USER_BALANCE);
 
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
         subscriptionId = config.subscriptionId;
         gasLane = config.gasLane;
-        automationUpdateInterval = config.automationUpdateInterval;
-        raffleEntranceFee = config.raffleEntranceFee;
+        automationUpdateInterval = config.interval;
+        raffleEntranceFee = config.entranceFee;
         callbackGasLimit = config.callbackGasLimit;
-        vrfCoordinatorV2_5 = config.vrfCoordinatorV2_5;
+        vrfCoordinatorV2_5 = config.vrfCoordinator;
     }
 
     /////////////////////////

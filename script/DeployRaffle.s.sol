@@ -7,13 +7,27 @@ import {Raffle} from "../src/Raffle.sol";
 import {AddConsumer, CreateSubscription, FundSubscription} from "./Interactions.s.sol";
 
 contract DeployRaffle is Script {
-    function run() public {}
+    function run() public returns (Raffle, HelperConfig) {
+        return deployContract();
+    }
 
     function deployContract() public returns (Raffle, HelperConfig) {
         HelperConfig helperConfig = new HelperConfig();
         //deploy -> deploy mocks, get local config
         // sepolia get sepolia config
         HelperConfig.NetworkConfig memory networkConfig = helperConfig.getConfig();
+
+        if (networkConfig.subscriptionId == 0) {
+            //create subscription
+            CreateSubscription createSubscription = new CreateSubscription();
+            (networkConfig.subscriptionId, networkConfig.vrfCoordinator) =
+                createSubscription.createSubscription(networkConfig.vrfCoordinator);
+
+            FundSubscription fundSubscription = new FundSubscription();
+            fundSubscription.fundSubscription(
+                networkConfig.vrfCoordinator, networkConfig.subscriptionId, networkConfig.link
+            );
+        }
 
         vm.startBroadcast();
         Raffle raffle = new Raffle(
@@ -25,9 +39,11 @@ contract DeployRaffle is Script {
             networkConfig.vrfCoordinator
         );
         vm.stopBroadcast();
+
+        AddConsumer addConsumer = new AddConsumer();
+        addConsumer.addConsumer(address(raffle), networkConfig.vrfCoordinator, networkConfig.subscriptionId);
+
+        helperConfig.setConfig(block.chainid, networkConfig);
         return (raffle, helperConfig);
     }
-
-
-
-    }
+}

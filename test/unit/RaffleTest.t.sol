@@ -24,9 +24,6 @@ contract RaffleTest is Test{
     address link;
     uint32 callbackGasLimit;
 
-    
-    
-
     address public PLAYER = makeAddr("player");
     uint256 public constant STARTING_PLAYER_BALANCE = 10 ether;
     event RaffleEnter(address indexed player);
@@ -130,9 +127,9 @@ contract RaffleTest is Test{
         raffle.enterRaffle{value: entranceFee}();
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
+
+        // Act / Assert
         raffle.performUpkeep("");
-        //Act //Assert
-        assert(raffle.getRaffleState() == Raffle.RaffleState.OPEN);
     }
 
     function testPerformUpkeepRevertsIfCheckUpkeepIsFalse() public {
@@ -149,5 +146,69 @@ contract RaffleTest is Test{
         //Act //Assert
         vm.expectRevert(abi.encodeWithSelector(Raffle.Raffle__UpkeepNotNeeded.selector, currentBalance, numPlayers, rState));
         raffle.performUpkeep("");
+    }
+
+    modifier raffleEntered() {
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.warp(block.timestamp + interval + 1);
+        vm.roll(block.number + 1);
+        _;
+    }
+
+    // What if we needed to get data from emitted events in our tests?
+    function testPerformUpkeepUpdatesRaffleStateAndEmitsRequestId() public raffleEntered {
+        //Arrange
+        
+        //Act
+        vm.recordLogs();
+        raffle.performUpkeep("");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1];
+
+        //Assert
+        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        assert(uint256(requestId) > 0);
+        assert(uint256(raffleState) == 1);
+    }
+
+    function testfulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep(uint256 randomrequestId) public raffleEntered {
+        //Arrange / Act / Assert
+        vm.expectRevert(VRFCoordinatorV2_5Mock.InvalidRequest.selector);
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(randomrequestId, address(raffle));
+    }
+
+    function testfulfillRandomWordsPicksAWinnerResetsAndSendsMoney() public raffleEntered {
+        //Arrange
+        uint256 additionalEntranceFee = 3; // 4 total
+        uint256 startingIndex = 1;
+        address expectedWinner = address(1);
+
+        for (uint256 i = startingIndex; i < startingIndex + additionalEntranceFee; i++) {
+            address newPlayer = address(uint160(i));
+            hoax(newPlayer, 1 ether);
+            raffle.enterRaffle{value: entranceFee}();
+        }
+        uint256 startingTimestamp = raffle.getLastTimeStamp();
+        uint256 winnerStartingBalance = expectedWinner.balance;
+
+        //Act
+        vm.recordLogs();
+        raffle.performUpkeep("");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1];
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(raffle));
+
+        //Assert
+        address recentWinner = raffle.getRecentWinner();
+        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        uint256 recentWinnerBalance = recentWinner.balance;
+        uint256 endingTimestamp = raffle.getLastTimeStamp();
+        uint256 prize = entranceFee * (additionalEntranceFee + 1);
+
+        assert(recentWinner == expectedWinner);
+        assert(uint256(raffleState) == 0);
+        assert(recentWinnerBalance == winnerStartingBalance + prize);
+        assert(endingTimestamp > startingTimestamp);
     }
 }
